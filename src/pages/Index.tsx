@@ -1,7 +1,8 @@
 
+
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
-
+import '../firebase'; 
 const Index = () => {
   const { currentUser, loading } = useAuth();
 

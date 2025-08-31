@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // This matches any document in the 'tasks' collection
+    match /tasks/{taskId} {
+      // Allow creation if the user is signed in (request.auth is not null)
+      allow create: if request.auth != null;
+
+      // Allow reading, updating, and deleting ONLY if:
+      // 1. The user is signed in (request.auth is not null)
+      // 2. The 'userId' field in the document they are trying to access
+      //    matches their authenticated user ID (request.auth.uid).
+      allow read, update, delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+    }
+  }
+}

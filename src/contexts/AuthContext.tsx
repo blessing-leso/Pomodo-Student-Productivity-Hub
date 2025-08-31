@@ -1,10 +1,20 @@
+// src/contexts/AuthContext.tsx
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { MockUser, getCurrentUser, mockLogin, mockSignup, mockLogout } from '../lib/mockAuth';
 import { toast } from 'sonner';
+// Firebase Auth imports
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  User
+} from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
 
 interface AuthContextType {
-  currentUser: MockUser | null;
+  currentUser: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
@@ -22,48 +32,103 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<MockUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const auth = getAuth();
+
   useEffect(() => {
-    // Get user from local storage on app load
-    const user = getCurrentUser();
-    setCurrentUser(user);
-    setLoading(false);
-  }, []);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [auth]);
 
   const signup = async (email: string, password: string) => {
     try {
-      const user = await mockSignup(email, password);
-      setCurrentUser(user);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      setCurrentUser(userCredential.user);
       toast.success("Account created successfully!");
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Failed to create account");
+      let userMessage = "Failed to create account. Please try again.";
+
+      if (error instanceof FirebaseError) {
+        switch (error.code) {
+          case 'auth/email-already-in-use':
+            userMessage = "This email is already in use. Please log in instead.";
+            break;
+          case 'auth/invalid-email':
+            userMessage = "Please enter a valid email address.";
+            break;
+          case 'auth/weak-password':
+            userMessage = "Password is too weak. Use at least 6 characters.";
+            break;
+          case 'auth/operation-not-allowed':
+            userMessage = "Email/Password sign-up is disabled. Please contact support.";
+            break;
+          default:
+            userMessage = "An unexpected sign-up error occurred.";
+            break;
+        }
+      } else {
+        userMessage = "A network or unknown error occurred during sign-up.";
+      }
+
+      toast.error(userMessage);             // ✅ user-friendly message on red toast
+console.error("Firebase Sign-up Error:", error.message || error.code);
+
       throw error;
     }
   };
 
   const login = async (email: string, password: string) => {
     try {
-      const user = await mockLogin(email, password);
-      setCurrentUser(user);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      setCurrentUser(userCredential.user);
       toast.success("Logged in successfully!");
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Failed to login");
+      let userMessage = "Login failed. Please check your credentials.";
+
+      if (error instanceof FirebaseError) {
+        switch (error.code) {
+          case 'auth/invalid-email':
+            userMessage = "Please enter a valid email address.";
+            break;
+          case 'auth/user-disabled':
+            userMessage = "This account has been disabled.";
+            break;
+          case 'auth/user-not-found':
+          case 'auth/wrong-password':
+          case 'auth/invalid-credential':
+            userMessage = "Invalid email or password.";
+            break;
+          case 'auth/too-many-requests':
+            userMessage = "Too many login attempts. Please try again later.";
+            break;
+          case 'auth/operation-not-allowed':
+            userMessage = "An unexpected login error occurred. Please try again.";
+            break;
+        }
+      } else {
+        userMessage = "A network or unknown error occurred during login.";
+      }
+
+      toast.error(userMessage);             // ✅ user-friendly message on red toast
+console.error("Firebase Login Error:", error.message || error.code);
+
       throw error;
     }
   };
 
   const logout = async () => {
     try {
-      await mockLogout();
+      await signOut(auth);
       setCurrentUser(null);
       toast.success("Logged out successfully!");
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Failed to logout");
+      toast.error("Failed to log out."); // friendly message
+      console.error("Logout failed:", error.message || error.code);
       throw error;
     }
   };
@@ -73,8 +138,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     login,
     signup,
-    logout
+    logout,
   };
 
-  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
 };
